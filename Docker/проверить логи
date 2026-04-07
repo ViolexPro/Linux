@@ -1,0 +1,43 @@
+2. Посмотреть размер логов
+docker ps -q | xargs docker inspect --format='{{.Name}} {{.LogPath}}' | \
+  while read name path; do 
+    size=$(du -h "$path" 2>/dev/null | cut -f1)
+    echo "$name - $size"
+  done
+
+3. Проверить топ контейнеров по объему логов
+docker ps -q | xargs docker inspect --format='{{.Name}} {{.LogPath}}' | \
+  awk '{print $1}' | sed 's/\///g' | \
+  while read name; do
+    size=$(docker inspect $name --format='{{.LogPath}}' | xargs du -h 2>/dev/null | cut -f1)
+    echo "$size $name"
+  done | sort -rh | head -10
+
+4. Посмотреть текущий драйвер логирования у всех контейнеров
+docker ps --format "table {{.Names}}\t{{.Image}}" | tail -n +2 | \
+  while read name image; do
+    driver=$(docker inspect $name --format='{{.HostConfig.LogConfig.Type}}')
+    echo "$name - driver: $driver"
+  done
+
+5. Проверить конкретные логи (живые)
+# Последние 100 строк
+docker logs --tail 100 <container_name>
+
+# Следить в реальном времени
+docker logs -f <container_name>
+
+# С таймстемпами
+docker logs -t <container_name> | tail -50
+
+6. Найти проблемные контейнеры с большими логами
+docker ps -q | while read cid; do
+  log_path=$(docker inspect $cid --format='{{.LogPath}}')
+  if [ -f "$log_path" ]; then
+    size=$(stat -f%z "$log_path" 2>/dev/null || stat -c%s "$log_path" 2>/dev/null)
+    size_mb=$((size / 1024 / 1024))
+    if [ $size_mb -gt 100 ]; then
+      echo "$(docker inspect $cid --format='{{.Name}}') - ${size_mb}MB"
+    fi
+  fi
+done

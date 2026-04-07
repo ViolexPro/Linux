@@ -1,0 +1,227 @@
+#!/bin/bash
+echo "========================================="
+echo "🌐 ПРОВЕРКА NGINX СЕРВЕРА"
+echo "========================================="
+
+# 1. ОПЕРАЦИОННАЯ СИСТЕМА
+echo ""
+echo "📀 ОПЕРАЦИОННАЯ СИСТЕМА:"
+cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID" || lsb_release -a 2>/dev/null
+echo "Версия ядра: $(uname -r)"
+echo "Хостнейм: $(hostname)"
+echo "IP-адреса: $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | tr '\n' ' ')"
+
+# 2. NGINX
+echo ""
+echo "🌐 NGINX:"
+if command -v nginx &> /dev/null; then
+    echo "   ✅ Установлен: $(nginx -v 2>&1)"
+    
+    # Статус сервиса
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        echo "   Статус: 🟢 Active"
+    else
+        echo "   Статус: 🔴 Не активен"
+    fi
+    
+    # Включен ли автозапуск
+    if systemctl is-enabled --quiet nginx 2>/dev/null; then
+        echo "   Автозапуск: ✅ Включен"
+    else
+        echo "   Автозапуск: ❌ Отключен"
+    fi
+    
+    # Версия и путь к бинарнику
+    echo "   Путь: $(which nginx)"
+    
+    # Проверка конфигурации
+    echo "   Проверка конфигурации:"
+    nginx -t 2>&1 | sed 's/^/     /'
+    
+    # Время работы (uptime)
+    if [ -f /var/run/nginx.pid ]; then
+        PID=$(cat /var/run/nginx.pid 2>/dev/null)
+        if [ -n "$PID" ] && [ -d "/proc/$PID" ]; then
+            UPTIME=$(ps -p $PID -o etime= 2>/dev/null | xargs)
+            echo "   Время работы: $UPTIME"
+        fi
+    fi
+else
+    echo "   ❌ Nginx не установлен"
+fi
+
+# 3. КОНФИГУРАЦИЯ NGINX
+echo ""
+echo "📁 КОНФИГУРАЦИЯ NGINX:"
+NGINX_CONF_DIR="/etc/nginx"
+if [ -d "$NGINX_CONF_DIR" ]; then
+    echo "   Основной конфиг: $NGINX_CONF_DIR/nginx.conf"
+    
+    # Количество файлов конфигурации
+    CONF_FILES=$(find $NGINX_CONF_DIR -name "*.conf" -type f 2>/dev/null | wc -l)
+    echo "   Файлов .conf: $CONF_FILES"
+    
+    # Количество сайтов (sites-available)
+    if [ -d "$NGINX_CONF_DIR/sites-available" ]; then
+        SITES_AVAIL=$(ls -1 $NGINX_CONF_DIR/sites-available/ 2>/dev/null | wc -l)
+        SITES_ENABLED=$(ls -1 $NGINX_CONF_DIR/sites-enabled/ 2>/dev/null | wc -l)
+        echo "   Сайтов (available): $SITES_AVAIL"
+        echo "   Сайтов (enabled): $SITES_ENABLED"
+        
+        # Список активных сайтов
+        if [ $SITES_ENABLED -gt 0 ]; then
+            echo "   Активные сайты:"
+            for site in $(ls -1 $NGINX_CONF_DIR/sites-enabled/ 2>/dev/null); do
+                echo "     - $site"
+            done
+        fi
+    fi
+    
+    # Проверка прав на файлы
+    echo "   Владелец конфигов: $(stat -c '%U' $NGINX_CONF_DIR/nginx.conf 2>/dev/null || stat -f '%Su' $NGINX_CONF_DIR/nginx.conf 2>/dev/null)"
+else
+    echo "   ❌ Директория конфигурации не найдена"
+fi
+
+# 4. PHP-FPM (если используется)
+echo ""
+echo "🐘 PHP-FPM:"
+if command -v php-fpm &> /dev/null || systemctl list-units --all | grep -q php.*-fpm; then
+    # Определяем версию PHP-FPM
+    PHP_FPM_SERVICE=$(systemctl list-units --all | grep -oE "php[0-9]+\.[0-9]+-fpm" | head -1)
+    if [ -n "$PHP_FPM_SERVICE" ]; then
+        echo "   Сервис: $PHP_FPM_SERVICE"
+        if systemctl is-active --quiet $PHP_FPM_SERVICE 2>/dev/null; then
+            echo "   Статус: 🟢 Active"
+        else
+            echo "   Статус: 🔴 Не активен"
+        fi
+    else
+        echo "   ⚠️ PHP-FPM установлен, но сервис не найден"
+    fi
+    
+    if command -v php &> /dev/null; then
+        echo "   PHP версия: $(php -v 2>&1 | head -1)"
+    fi
+else
+    echo "   ⚠️ PHP-FPM не обнаружен (возможно, не используется)"
+fi
+
+# 5. SSL/Сертификаты
+echo ""
+echo "🔒 SSL/СЕРТИФИКАТЫ:"
+# Ищем сертификаты в конфигах
+CERT_DIRS="/etc/nginx/ssl /etc/ssl /etc/letsencrypt/live"
+for dir in $CERT_DIRS; do
+    if [ -d "$dir" ]; then
+        CERT_COUNT=$(find $dir -name "*.crt" -o -name "*.pem" 2>/dev/null | wc -l)
+        if [ $CERT_COUNT -gt 0 ]; then
+            echo "   📁 $dir: $CERT_COUNT файлов"
+        fi
+    fi
+done
+
+# Проверка Certbot (Let's Encrypt)
+if command -v certbot &> /dev/null; then
+    echo "   ✅ Certbot установлен: $(certbot --version 2>&1)"
+    # Проверка запланированного обновления
+    if systemctl list-timers --all | grep -q certbot; then
+        echo "   Автообновление: настроено"
+    fi
+fi
+
+# 6. ПОРТЫ И СЕТЬ
+echo ""
+echo "🔌 ПОРТЫ И СЕТЬ:"
+# Проверка, какие порты слушает nginx
+if command -v ss &> /dev/null; then
+    echo "   Слушает на портах:"
+    ss -tlnp 2>/dev/null | grep nginx | awk '{print "     " $4}' | sort -u | while read port; do
+        echo "     $port"
+    done
+elif command -v netstat &> /dev/null; then
+    netstat -tlnp 2>/dev/null | grep nginx | awk '{print "     " $4}' | sort -u
+fi
+
+# 7. ПРОКСИРУЕМЫЕ СЕРВИСЫ (если есть upstream)
+echo ""
+echo "🔄 ПРОКСИ И UPSTREAM:"
+if [ -f "$NGINX_CONF_DIR/nginx.conf" ]; then
+    # Поиск upstream блоков
+    UPSTREAMS=$(grep -r "upstream" $NGINX_CONF_DIR --include="*.conf" 2>/dev/null | grep -v "^#" | wc -l)
+    if [ $UPSTREAMS -gt 0 ]; then
+        echo "   Найдено upstream блоков: $UPSTREAMS"
+        echo "   Upstream серверы:"
+        grep -rh "server " $NGINX_CONF_DIR --include="*.conf" 2>/dev/null | grep -E "upstream|server " | grep -v "^#" | head -10 | sed 's/^/     /'
+    else
+        echo "   ⚠️ Upstream блоки не найдены"
+    fi
+fi
+
+# 8. ЛОГИ NGINX
+echo ""
+echo "📄 ЛОГИ NGINX:"
+LOG_DIR="/var/log/nginx"
+if [ -d "$LOG_DIR" ]; then
+    echo "   Директория: $LOG_DIR"
+    
+    # Размер логов
+    LOG_SIZE=$(du -sh $LOG_DIR 2>/dev/null | cut -f1)
+    echo "   Общий размер: $LOG_SIZE"
+    
+    # Наличие ротации
+    if [ -f /etc/logrotate.d/nginx ]; then
+        echo "   Logrotate: ✅ настроен"
+    else
+        echo "   Logrotate: ❌ не настроен"
+    fi
+    
+    # Последние записи в error.log
+    if [ -f "$LOG_DIR/error.log" ]; then
+        LAST_ERRORS=$(tail -5 $LOG_DIR/error.log 2>/dev/null | grep -v "^$" | wc -l)
+        echo "   Последние ошибки (5 строк):"
+        tail -5 $LOG_DIR/error.log 2>/dev/null | sed 's/^/     /'
+    fi
+else
+    echo "   ❌ Директория логов не найдена"
+fi
+
+# 9. РЕСУРСЫ СЕРВЕРА
+echo ""
+echo "💻 РЕСУРСЫ СЕРВЕРА:"
+echo "   CPU: $(nproc) ядер"
+echo "   RAM: $(free -h | grep Mem | awk '{print $2}') всего, $(free -h | grep Mem | awk '{print $4}') свободно"
+echo "   Диск: $(df -h / | awk 'NR==2 {print $2}') всего, $(df -h / | awk 'NR==2 {print $4}') свободно"
+echo "   Нагрузка: $(uptime | awk -F'load average:' '{print $2}' | xargs)"
+
+# 10. ПРОЦЕССЫ NGINX
+echo ""
+echo "⚙️ ПРОЦЕССЫ NGINX:"
+WORKER_COUNT=$(ps aux | grep "nginx: worker" | grep -v grep | wc -l)
+echo "   Worker процессов: $WORKER_COUNT"
+ps aux | grep nginx | grep -v grep | awk '{print "     " $11 " (PID: " $2 ", CPU: " $3 "%, MEM: " $4 "%)"}'
+
+# 11. ДОПОЛНИТЕЛЬНЫЕ МОДУЛИ NGINX
+echo ""
+echo "🔧 УСТАНОВЛЕННЫЕ МОДУЛИ NGINX:"
+if command -v nginx &> /dev/null; then
+    nginx -V 2>&1 | grep -o "\-\-with-[a-z_]*" | sort -u | sed 's/^/     /'
+fi
+
+# 12. СТАТИСТИКА ЗАПРОСОВ (если есть доступ к логам)
+echo ""
+echo "📊 СТАТИСТИКА (последние 24 часа):"
+if [ -f "$LOG_DIR/access.log" ]; then
+    # Количество запросов за последние 24 часа
+    LAST_24H=$(grep "$(date -d '24 hours ago' '+%d/%b/%Y')" $LOG_DIR/access.log 2>/dev/null | wc -l)
+    echo "   Запросов за 24 часа: $LAST_24H"
+    
+    # Топ 10 IP
+    echo "   Топ 10 IP адресов:"
+    awk '{print $1}' $LOG_DIR/access.log 2>/dev/null | sort | uniq -c | sort -rn | head -5 | awk '{print "     " $2 " (" $1 " запросов)"}'
+fi
+
+echo ""
+echo "========================================="
+echo "✅ ПРОВЕРКА ЗАВЕРШЕНА"
+echo "========================================="

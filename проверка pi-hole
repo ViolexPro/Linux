@@ -1,0 +1,269 @@
+#!/bin/bash
+echo "========================================="
+echo "🛡️ ПРОВЕРКА PI-HOLE СЕРВЕРА"
+echo "========================================="
+
+# 1. ОПЕРАЦИОННАЯ СИСТЕМА
+echo ""
+echo "📀 ОПЕРАЦИОННАЯ СИСТЕМА:"
+cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID" || lsb_release -a 2>/dev/null
+echo "Версия ядра: $(uname -r)"
+echo "Хостнейм: $(hostname)"
+echo "IP-адреса: $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | tr '\n' ' ')"
+
+# 2. ПРОВЕРКА УСТАНОВКИ PI-HOLE
+echo ""
+echo "🛡️ PI-HOLE:"
+if command -v pihole &> /dev/null; then
+    echo "   ✅ Установлен"
+    echo "   Версия: $(pihole version | head -1 | cut -d' ' -f3)"
+    
+    # Статус сервисов
+    if systemctl is-active --quiet pihole-FTL 2>/dev/null; then
+        echo "   FTL сервис: 🟢 Active"
+    else
+        echo "   FTL сервис: 🔴 Не активен"
+    fi
+    
+    if systemctl is-active --quiet lighttpd 2>/dev/null; then
+        echo "   Web сервер (lighttpd): 🟢 Active"
+    else
+        echo "   Web сервер (lighttpd): 🔴 Не активен"
+    fi
+    
+    # Автозапуск
+    if systemctl is-enabled --quiet pihole-FTL 2>/dev/null; then
+        echo "   Автозапуск: ✅ Включен"
+    else
+        echo "   Автозапуск: ❌ Отключен"
+    fi
+    
+    # Путь к установке
+    echo "   Путь: /etc/pihole/"
+    
+    # Время работы
+    if [ -f /run/pihole-FTL.pid ]; then
+        PID=$(cat /run/pihole-FTL.pid 2>/dev/null)
+        if [ -n "$PID" ] && [ -d "/proc/$PID" ]; then
+            UPTIME=$(ps -p $PID -o etime= 2>/dev/null | xargs)
+            echo "   Время работы FTL: $UPTIME"
+        fi
+    fi
+else
+    echo "   ❌ Pi-hole не установлен"
+    exit 1
+fi
+
+# 3. КОНФИГУРАЦИЯ PI-HOLE
+echo ""
+echo "📁 КОНФИГУРАЦИЯ:"
+PIHOLE_DIR="/etc/pihole"
+if [ -d "$PIHOLE_DIR" ]; then
+    # Основные файлы конфигурации
+    [ -f "$PIHOLE_DIR/setupVars.conf" ] && echo "   ✅ setupVars.conf (основной конфиг)"
+    [ -f "$PIHOLE_DIR/adlists.list" ] && echo "   📋 adlists.list (списки блокировки)"
+    [ -f "$PIHOLE_DIR/dhcp.leases" ] && echo "   📡 dhcp.leases (DHCP аренды)"
+    
+    # Размер базы данных Gravity
+    if [ -f "$PIHOLE_DIR/gravity.db" ]; then
+        GRAVITY_SIZE=$(du -h "$PIHOLE_DIR/gravity.db" 2>/dev/null | cut -f1)
+        echo "   🗄️ Gravity DB размер: $GRAVITY_SIZE"
+    fi
+fi
+
+# 4. DNS НАСТРОЙКИ
+echo ""
+echo "🌐 DNS НАСТРОЙКИ:"
+# Определяем upstream DNS
+if [ -f "$PIHOLE_DIR/setupVars.conf" ]; then
+    PIHOLE_DNS=$(grep "PIHOLE_DNS_" $PIHOLE_DIR/setupVars.conf 2>/dev/null | cut -d'=' -f2 | tr -d '"' | sort -u)
+    if [ -n "$PIHOLE_DNS" ]; then
+        echo "   Upstream DNS серверы:"
+        echo "$PIHOLE_DNS" | sed 's/^/     /'
+    fi
+fi
+
+# Проверка, какой DNS используется на самом деле
+if command -v dig &> /dev/null; then
+    echo "   Активный DNS (по умолчанию):"
+    dig google.com +short 2>/dev/null | head -1 | sed 's/^/     /'
+fi
+
+# 5. СТАТИСТИКА PI-HOLE
+echo ""
+echo "📊 СТАТИСТИКА:"
+if command -v pihole &> /dev/null; then
+    # Используем pihole query для статистики
+    STATS=$(pihole -c -j 2>/dev/null)
+    if [ -n "$STATS" ]; then
+        DOMAINS_BLOCKED=$(echo $STATS | grep -o '"domains_being_blocked":[0-9]*' | cut -d: -f2)
+        QUERIES_TOTAL=$(echo $STATS | grep -o '"queries_today":[0-9]*' | cut -d: -f2)
+        QUERIES_BLOCKED=$(echo $STATS | grep -o '"blocked_today":[0-9]*' | cut -d: -f2)
+        BLOCK_PERCENT=$(echo $STATS | grep -o '"ads_percentage_today":[0-9.]*' | cut -d: -f2)
+        
+        echo "   🌐 Заблокировано доменов: $DOMAINS_BLOCKED"
+        echo "   📊 Запросов сегодня: $QUERIES_TOTAL"
+        echo "   🚫 Заблокировано сегодня: $QUERIES_BLOCKED"
+        echo "   📈 Процент блокировки: ${BLOCK_PERCENT}%"
+    else
+        echo "   ⚠️ Не удалось получить статистику"
+    fi
+fi
+
+# 6. СПИСКИ БЛОКИРОВКИ
+echo ""
+echo "📋 СПИСКИ БЛОКИРОВКИ:"
+if [ -f "$PIHOLE_DIR/adlists.list" ]; then
+    LIST_COUNT=$(grep -v "^#" $PIHOLE_DIR/adlists.list 2>/dev/null | grep -v "^$" | wc -l)
+    echo "   Активных списков: $LIST_COUNT"
+    
+    # Показываем первые 5 списков
+    echo "   Первые 5 списков:"
+    grep -v "^#" $PIHOLE_DIR/adlists.list 2>/dev/null | grep -v "^$" | head -5 | sed 's/^/     /'
+    
+    if [ $LIST_COUNT -gt 5 ]; then
+        echo "     ... и еще $((LIST_COUNT - 5)) списков"
+    fi
+fi
+
+# 7. DHCP СТАТУС (если включен)
+echo ""
+echo "📡 DHCP СЕРВЕР:"
+if [ -f "$PIHOLE_DIR/setupVars.conf" ]; then
+    DHCP_ACTIVE=$(grep "DHCP_ACTIVE=" $PIHOLE_DIR/setupVars.conf 2>/dev/null | cut -d'=' -f2)
+    if [ "$DHCP_ACTIVE" = "true" ]; then
+        echo "   ✅ DHCP сервер включен"
+        DHCP_START=$(grep "DHCP_START=" $PIHOLE_DIR/setupVars.conf 2>/dev/null | cut -d'=' -f2)
+        DHCP_END=$(grep "DHCP_END=" $PIHOLE_DIR/setupVars.conf 2>/dev/null | cut -d'=' -f2)
+        echo "   Диапазон: $DHCP_START - $DHCP_END"
+        
+        # Количество активных аренд
+        if [ -f "$PIHOLE_DIR/dhcp.leases" ]; then
+            LEASE_COUNT=$(wc -l < $PIHOLE_DIR/dhcp.leases 2>/dev/null)
+            echo "   Активных аренд: $LEASE_COUNT"
+        fi
+    else
+        echo "   ⚠️ DHCP сервер отключен (используется внешний DHCP)"
+    fi
+fi
+
+# 8. ЛОГИ PI-HOLE
+echo ""
+echo "📄 ЛОГИ PI-HOLE:"
+LOG_DIR="/var/log/pihole"
+if [ -d "$LOG_DIR" ]; then
+    echo "   Директория: $LOG_DIR"
+    LOG_SIZE=$(du -sh $LOG_DIR 2>/dev/null | cut -f1)
+    echo "   Общий размер: $LOG_SIZE"
+    
+    # Основные логи
+    [ -f "$LOG_DIR/pihole.log" ] && echo "   pihole.log: $(du -h $LOG_DIR/pihole.log 2>/dev/null | cut -f1)"
+    [ -f "$LOG_DIR/FTL.log" ] && echo "   FTL.log: $(du -h $LOG_DIR/FTL.log 2>/dev/null | cut -f1)"
+    
+    # Последние записи в логах
+    if [ -f "$LOG_DIR/pihole.log" ]; then
+        echo "   Последние DNS запросы (5 строк):"
+        tail -5 $LOG_DIR/pihole.log 2>/dev/null | sed 's/^/     /'
+    fi
+    
+    # Наличие ротации логов
+    if [ -f /etc/logrotate.d/pihole ]; then
+        echo "   Logrotate: ✅ настроен"
+    fi
+fi
+
+# 9. WEB ИНТЕРФЕЙС
+echo ""
+echo "🌐 WEB ИНТЕРФЕЙС:"
+# Проверяем пароль
+if [ -f "$PIHOLE_DIR/setupVars.conf" ]; then
+    WEBPASSWORD=$(grep "WEBPASSWORD=" $PIHOLE_DIR/setupVars.conf 2>/dev/null | cut -d'=' -f2)
+    if [ -n "$WEBPASSWORD" ] && [ "$WEBPASSWORD" != "" ]; then
+        echo "   🔐 Аутентификация: включена"
+        # Проверяем, не дефолтный ли пароль
+        if [ "$WEBPASSWORD" = "7f7f3c7f7f3c7f7f3c7f7f3c7f7f3c7f" ]; then
+            echo "   ⚠️ ВНИМАНИЕ: используется пароль по умолчанию!"
+        fi
+    else
+        echo "   🔓 Аутентификация: отключена (не рекомендуется)"
+    fi
+fi
+
+# URL для доступа
+IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+if [ -n "$IP_ADDR" ]; then
+    echo "   🔗 Доступ: http://$IP_ADDR/admin/"
+fi
+
+# 10. ПОРТЫ И СЕТЬ
+echo ""
+echo "🔌 ПОРТЫ И СЕТЬ:"
+if command -v ss &> /dev/null; then
+    echo "   DNS (порт 53):"
+    ss -tlnp 2>/dev/null | grep ":53 " | sed 's/^/     /'
+    echo "   Web (порт 80):"
+    ss -tlnp 2>/dev/null | grep ":80 " | grep lighttpd | sed 's/^/     /'
+fi
+
+# 11. РЕСУРСЫ СЕРВЕРА
+echo ""
+echo "💻 РЕСУРСЫ СЕРВЕРА:"
+echo "   CPU: $(nproc) ядер"
+echo "   RAM: $(free -h | grep Mem | awk '{print $2}') всего, $(free -h | grep Mem | awk '{print $4}') свободно"
+echo "   Диск: $(df -h / | awk 'NR==2 {print $2}') всего, $(df -h / | awk 'NR==2 {print $4}') свободно"
+echo "   Нагрузка: $(uptime | awk -F'load average:' '{print $2}' | xargs)"
+
+# 12. ПРОЦЕССЫ PI-HOLE
+echo ""
+echo "⚙️ ПРОЦЕССЫ:"
+ps aux | grep -E "pihole-FTL|lighttpd" | grep -v grep | awk '{print "     " $11 " (PID: " $2 ", CPU: " $3 "%, MEM: " $4 "%)"}'
+
+# 13. ТОП КЛИЕНТОВ (кто больше всего запрашивает)
+echo ""
+echo "👥 ТОП КЛИЕНТОВ (за последние 24 часа):"
+if [ -f "$LOG_DIR/pihole.log" ]; then
+    # Собираем IP клиентов из логов за последние 24 часа
+    CLIENT_IPS=$(grep "$(date '+%b %d')" $LOG_DIR/pihole.log 2>/dev/null | grep -oP 'client \K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort | uniq -c | sort -rn | head -5)
+    if [ -n "$CLIENT_IPS" ]; then
+        echo "$CLIENT_IPS" | while read count ip; do
+            echo "     $ip ($count запросов)"
+        done
+    else
+        echo "     Нет данных за сегодня"
+    fi
+fi
+
+# 14. ТОП ЗАБЛОКИРОВАННЫХ ДОМЕНОВ
+echo ""
+echo "🚫 ТОП ЗАБЛОКИРОВАННЫХ ДОМЕНОВ (за последние 24 часа):"
+if [ -f "$LOG_DIR/pihole.log" ]; then
+    BLOCKED_DOMAINS=$(grep "$(date '+%b %d')" $LOG_DIR/pihole.log 2>/dev/null | grep "blocked" | grep -oP 'query\[[A-Z]+\] \K[^ ]+' | sort | uniq -c | sort -rn | head -5)
+    if [ -n "$BLOCKED_DOMAINS" ]; then
+        echo "$BLOCKED_DOMAINS" | while read count domain; do
+            echo "     $domain ($count раз)"
+        done
+    else
+        echo "     Нет блокировок за сегодня"
+    fi
+fi
+
+# 15. ОБНОВЛЕНИЯ
+echo ""
+echo "🔄 СТАТУС ОБНОВЛЕНИЙ:"
+if command -v pihole &> /dev/null; then
+    # Проверяем доступные обновления
+    UPDATE_CHECK=$(pihole -up --check-only 2>&1)
+    if echo "$UPDATE_CHECK" | grep -q "Everything is up to date"; then
+        echo "   ✅ Pi-hole актуален"
+    elif echo "$UPDATE_CHECK" | grep -q "Updates available"; then
+        echo "   ⚠️ Доступны обновления!"
+        echo "$UPDATE_CHECK" | grep -E "Core|Web|FTL" | sed 's/^/     /'
+    else
+        echo "   ⚠️ Не удалось проверить обновления"
+    fi
+fi
+
+echo ""
+echo "========================================="
+echo "✅ ПРОВЕРКА ЗАВЕРШЕНА"
+echo "========================================="

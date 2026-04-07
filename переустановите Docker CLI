@@ -1,0 +1,12 @@
+# 1. Удалите поврежденный бинарник
+sudo rm /usr/bin/docker
+
+# 2. Скачайте и установите свежий
+sudo curl -fsSL https://download.docker.com/linux/static/stable/$(uname -m)/docker-29.1.2.tgz -o /tmp/docker.tgz
+cd /tmp && sudo tar xzf docker.tgz
+sudo cp docker/docker /usr/bin/
+sudo chmod +x /usr/bin/docker
+
+# 3. Проверьте
+docker --version
+docker ps

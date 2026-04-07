@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Основной сервис BookStack
+  bookstack:
+    image: lscr.io/linuxserver/bookstack            # Официальный образ BookStack
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: bookstack                       # Имя основного контейнера
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Moscow                            # Ваш часовой пояс
+      - APP_LANG=ru
+      - APP_URL=https://bookstack.pzsp.ru       # URL, по которому будет открываться BookStack
+      - APP_KEY=${APP_KEY}
+      - DB_HOST=bookstack_db                        # Имя хоста БД (должно совпадать с container_name сервиса БД)
+      - DB_PORT=3306                                # Внутренний порт БД
+      - DB_USERNAME=${MYSQL_USER}                       # Пользователь БД (как в MYSQL_USER)
+      - DB_PASSWORD=${MYSQL_PASSWORD}                   # Пароль БД (как в MYSQL_PASSWORD)
+      - DB_DATABASE=bookstackapp                    # Имя БД (как в MYSQL_DATABASE)
+
+    volumes:
+      - /opt/bookstack/app_data:/config             # Папка для хранения данных приложения (загрузки, настройки)
+    ports:
+      - 8081:80                                     # Проброс порта: хост:контейнер
+      - 5443:443
+    restart: unless-stopped
+    depends_on:
+      - bookstack_db                                # Говорит Docker, что сначала нужно запустить БД
+
+  # Сервис базы данных (MariaDB)
+  bookstack_db:
+    image: lscr.io/linuxserver/mariadb              # Официальный образ от LinuxServer.io
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: bookstack_db                    # Имя контейнера с БД
+    environment:
+      - PUID=1000                                   # ID пользователя для прав доступа
+      - PGID=1000                                   # ID группы для прав доступа
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}  # Задайте надежный пароль для root
+      - TZ=Europe/Moscow                            # Ваш часовой пояс
+      - MYSQL_DATABASE=bookstackapp                 # Имя базы данных
+      - MYSQL_USER=${MYSQL_USER}                    # Имя пользователя БД
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}            # Пароль пользователя БД
+    volumes:
+      - /opt/bookstack/db_data:/config              # Папка для хранения данных БД на хосте
+    restart: unless-stopped

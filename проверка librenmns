@@ -1,0 +1,125 @@
+#!/bin/bash
+echo "========================================="
+echo "🔍 ПРОВЕРКА КОМПОНЕНТОВ LIBRENMS"
+echo "========================================="
+
+# 1. ОПЕРАЦИОННАЯ СИСТЕМА
+echo ""
+echo "📀 ОПЕРАЦИОННАЯ СИСТЕМА:"
+cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID" || lsb_release -a 2>/dev/null
+echo "Версия ядра: $(uname -r)"
+
+# 2. БАЗА ДАННЫХ (MySQL/MariaDB)
+echo ""
+echo "🗄️ БАЗА ДАННЫХ:"
+# Проверяем, что установлено
+if command -v mysql &> /dev/null; then
+    MYSQL_VERSION=$(mysql --version 2>/dev/null)
+    echo "   Установлен: $MYSQL_VERSION"
+    
+    # Проверяем, какая БД используется для LibreNMS
+    if [ -f /opt/librenms/config.php ]; then
+        DB_NAME=$(grep "config\['db_name'\]" /opt/librenms/config.php | cut -d"'" -f4)
+        echo "   База данных для LibreNMS: $DB_NAME"
+    fi
+    
+    # Проверяем статус сервиса
+    if systemctl is-active --quiet mysql 2>/dev/null || systemctl is-active --quiet mariadb 2>/dev/null; then
+        echo "   Статус: 🟢 Active"
+    else
+        echo "   Статус: 🔴 Не активен"
+    fi
+else
+    echo "   ❌ MySQL/MariaDB не установлен"
+fi
+
+# 3. ВЕБ-СЕРВЕР
+echo ""
+echo "🌐 ВЕБ-СЕРВЕР:"
+if command -v nginx &> /dev/null; then
+    echo "   ✅ Nginx: $(nginx -v 2>&1)"
+    systemctl is-active --quiet nginx && echo "   Статус: 🟢 Active" || echo "   Статус: 🔴 Не активен"
+elif command -v apache2 &> /dev/null; then
+    echo "   ✅ Apache: $(apache2 -v 2>&1 | head -1)"
+    systemctl is-active --quiet apache2 && echo "   Статус: 🟢 Active" || echo "   Статус: 🔴 Не активен"
+elif command -v httpd &> /dev/null; then
+    echo "   ✅ Apache (httpd): $(httpd -v 2>&1 | head -1)"
+    systemctl is-active --quiet httpd && echo "   Статус: 🟢 Active" || echo "   Статус: 🔴 Не активен"
+else
+    echo "   ❌ Веб-сервер не установлен"
+fi
+
+# 4. PHP
+echo ""
+echo "🐘 PHP:"
+if command -v php &> /dev/null; then
+    PHP_VERSION=$(php -v 2>&1 | head -1)
+    echo "   $PHP_VERSION"
+    
+    # Проверяем необходимые модули
+    echo "   Модули:"
+    php -m | grep -E "mysql|mysqli|pdo_mysql|gd|snmp|curl|mbstring|xml|json" | sed 's/^/     ✅ /'
+else
+    echo "   ❌ PHP не установлен"
+fi
+
+# 5. SNMP
+echo ""
+echo "🔌 SNMP:"
+if command -v snmpwalk &> /dev/null; then
+    SNMP_VERSION=$(snmpwalk -V 2>&1)
+    echo "   $SNMP_VERSION"
+    systemctl is-active --quiet snmpd && echo "   snmpd: 🟢 Active" || echo "   snmpd: 🔴 Не активен"
+else
+    echo "   ❌ SNMP не установлен"
+fi
+
+# 6. RRDTool (для графиков)
+echo ""
+echo "📈 RRDTOOL:"
+if command -v rrdtool &> /dev/null; then
+    echo "   ✅ $(rrdtool --version | head -1)"
+else
+    echo "   ❌ RRDTool не установлен"
+fi
+
+# 7. LibreNMS
+echo ""
+echo "🖥️ LIBRENMS:"
+if [ -d /opt/librenms ]; then
+    if [ -f /opt/librenms/config.php ]; then
+        echo "   ✅ Установлен"
+        # Версия из composer.json или git
+        if [ -d /opt/librenms/.git ]; then
+            cd /opt/librenms
+            VERSION=$(git describe --tags 2>/dev/null || git rev-parse --short HEAD 2>/dev/null)
+            echo "   Версия: $VERSION"
+        fi
+    else
+        echo "   ⚠️ Каталог существует, но config.php отсутствует (не настроен)"
+    fi
+else
+    echo "   ❌ LibreNMS не установлен"
+fi
+
+# 8. Дополнительные компоненты
+echo ""
+echo "🔧 ДОПОЛНИТЕЛЬНО:"
+command -v fping &> /dev/null && echo "   ✅ fping: $(fping -v 2>&1 | head -1)" || echo "   ❌ fping"
+command -v redis-cli &> /dev/null && echo "   ✅ Redis: $(redis-cli --version)" || echo "   ⚠️ Redis не установлен (опционально)"
+command -v rrdcached &> /dev/null && echo "   ✅ rrdcached установлен" || echo "   ⚠️ rrdcached не установлен (опционально)"
+
+# 9. ЗАПУСК ВСТРОЕННОЙ ПРОВЕРКИ LIBRENMS (самое важное!)
+echo ""
+echo "🔬 ВСТРОЕННАЯ ПРОВЕРКА LIBRENMS:"
+if [ -f /opt/librenms/validate.php ]; then
+    cd /opt/librenms
+    php validate.php 2>/dev/null
+else
+    echo "   ⚠️ Файл validate.php не найден. LibreNMS не установлен или установлен не в /opt/librenms"
+fi
+
+echo ""
+echo "========================================="
+echo "✅ ПРОВЕРКА ЗАВЕРШЕНА"
+echo "========================================="

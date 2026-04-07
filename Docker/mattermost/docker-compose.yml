@@ -1,0 +1,43 @@
+version: "3.8"
+services:
+  mattermost:
+    user: root
+    image: mattermost/mattermost-team-edition:latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: mattermost
+    restart: unless-stopped
+    ports:
+      - "8065:8065"
+    volumes:
+      - /opt/mattermost/mattermost-data:/mattermost/data
+      - /opt/mattermost/mattermost-config:/mattermost/config
+    environment:
+      TZ: Europe/Moscow
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:${POSTGRES_PASSWORD}@postgres:5432/mattermost?sslmode=disable
+      MM_SERVICESETTINGS_SITEURL: http://mattermost.pzsp.ru:8065
+
+  postgres:
+    image: postgres:16-alpine
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: mattermost-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mattermost
+      POSTGRES_USER: mattermost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /opt/mattermost/postgres-data:/var/lib/postgresql/data
+
+volumes:
+  mattermost-data:
+  mattermost-config:
+  postgres-data:

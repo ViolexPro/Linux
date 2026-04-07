@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  dockerproxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: dockerproxy
+    restart: unless-stopped
+    environment:
+      # Разрешаем доступ к контейнерам
+      - CONTAINERS=1
+      # Разрешаем доступ к информации об образах (ЭТО КЛЮЧЕВОЕ!)
+      - IMAGES=1
+      # Разрешаем доступ к информации о сетях
+      - NETWORKS=1
+      # Разрешаем доступ к сервисам (нужно для WUD)
+      - SERVICES=1
+      # Разрешаем доступ к задачам
+      - TASKS=1
+      # Запрещаем изменяющие операции (безопасность)
+      - POST=0
+      # Остальное запрещаем для безопасности
+      - AUTH=0
+      - SEARCH=0
+      - BUILD=0
+      - COMMIT=0
+      - VOLUMES=0
+    ports:
+      - "2375:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
