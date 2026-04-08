@@ -1,0 +1,330 @@
+#!/bin/bash
+echo "========================================="
+echo "🔄 ПРОВЕРКА OXIDIZED СЕРВЕРА"
+echo "========================================="
+
+# 1. ОПЕРАЦИОННАЯ СИСТЕМА
+echo ""
+echo "📀 ОПЕРАЦИОННАЯ СИСТЕМА:"
+cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID" || lsb_release -a 2>/dev/null
+echo "Версия ядра: $(uname -r)"
+echo "Хостнейм: $(hostname)"
+echo "IP-адреса: $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | tr '\n' ' ')"
+
+# 2. ПРОВЕРКА УСТАНОВКИ OXIDIZED
+echo ""
+echo "🔄 OXIDIZED:"
+if command -v oxidized &> /dev/null; then
+    echo "   ✅ Установлен"
+    OXIDIZED_VERSION=$(oxidized -v 2>&1 | head -1)
+    echo "   Версия: $OXIDIZED_VERSION"
+    
+    # Проверяем статус сервиса
+    if systemctl is-active --quiet oxidized 2>/dev/null; then
+        echo "   Сервис: 🟢 Active"
+    else
+        echo "   Сервис: 🔴 Не активен"
+    fi
+    
+    # Автозапуск
+    if systemctl is-enabled --quiet oxidized 2>/dev/null; then
+        echo "   Автозапуск: ✅ Включен"
+    else
+        echo "   Автозапуск: ❌ Отключен"
+    fi
+    
+    # Пользователь, от которого запущен
+    OXIDIZED_USER=$(ps aux | grep oxidized | grep -v grep | head -1 | awk '{print $1}')
+    echo "   Пользователь запуска: ${OXIDIZED_USER:-не определен}"
+else
+    echo "   ❌ Oxidized не установлен"
+    exit 1
+fi
+
+# 3. ПРОВЕРКА GEM ПАКЕТОВ
+echo ""
+echo "💎 GEM ПАКЕТЫ:"
+if command -v gem &> /dev/null; then
+    echo "   Установленные пакеты:"
+    gem list 2>/dev/null | grep -E "oxidized" | sed 's/^/     /'
+fi
+
+# 4. КОНФИГУРАЦИЯ OXIDIZED
+echo ""
+echo "📁 КОНФИГУРАЦИЯ:"
+# Поиск конфигурационного файла
+CONFIG_PATHS=("/etc/oxidized/config" "$HOME/.config/oxidized/config" "/home/oxidized/.config/oxidized/config")
+for path in "${CONFIG_PATHS[@]}"; do
+    if [ -f "$path" ]; then
+        echo "   ✅ Конфиг найден: $path"
+        CONFIG_PATH="$path"
+        CONFIG_OWNER=$(stat -c '%U' "$path" 2>/dev/null)
+        echo "   Владелец: $CONFIG_OWNER"
+        break
+    fi
+done
+
+# 5. ОСНОВНЫЕ НАСТРОЙКИ ИЗ КОНФИГА
+echo ""
+echo "⚙️ ОСНОВНЫЕ НАСТРОЙКИ:"
+if [ -n "$CONFIG_PATH" ]; then
+    # Интервал опроса
+    INTERVAL=$(grep "^interval:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Интервал опроса: ${INTERVAL:-3600} сек"
+    
+    # Таймаут
+    TIMEOUT=$(grep "^timeout:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Таймаут: ${TIMEOUT:-20} сек"
+    
+    # Количество потоков
+    THREADS=$(grep "^threads:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Потоков: ${THREADS:-30}"
+    
+    # Количество попыток
+    RETRIES=$(grep "^retries:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Попыток: ${RETRIES:-3}"
+    
+    # REST API
+    REST=$(grep "^rest:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   REST API: ${REST:-не настроен}"
+    
+    # Username по умолчанию
+    USERNAME=$(grep "^username:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Username по умолчанию: ${USERNAME:-не задан}"
+    
+    # Debug режим
+    DEBUG=$(grep "^debug:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    echo "   Debug режим: ${DEBUG:-false}"
+fi
+
+# 6. ИСТОЧНИК ДАННЫХ (SOURCE)
+echo ""
+echo "📋 ИСТОЧНИК ДАННЫХ (SOURCE):"
+if [ -n "$CONFIG_PATH" ]; then
+    SOURCE_TYPE=$(grep -A2 "^source:" "$CONFIG_PATH" 2>/dev/null | grep "default:" | head -1 | awk '{print $2}')
+    echo "   Тип источника: ${SOURCE_TYPE:-не определен}"
+    
+    case "$SOURCE_TYPE" in
+        csv)
+            CSV_FILE=$(grep -A10 "^source:" "$CONFIG_PATH" 2>/dev/null | grep "file:" | head -1 | awk '{print $2}')
+            if [ -n "$CSV_FILE" ]; then
+                # Заменяем ~ на полный путь
+                CSV_FILE=$(echo "$CSV_FILE" | sed "s|~|$HOME|g")
+                if [ -f "$CSV_FILE" ]; then
+                    DEVICE_COUNT=$(grep -v "^#" "$CSV_FILE" 2>/dev/null | grep -v "^$" | wc -l)
+                    echo "   CSV файл: $CSV_FILE"
+                    echo "   Устройств в списке: $DEVICE_COUNT"
+                    echo "   Первые 5 устройств:"
+                    grep -v "^#" "$CSV_FILE" 2>/dev/null | grep -v "^$" | head -5 | sed 's/^/     /'
+                else
+                    echo "   ⚠️ CSV файл не найден: $CSV_FILE"
+                fi
+            fi
+            ;;
+        sql)
+            SQL_ADAPTER=$(grep -A10 "^source:" "$CONFIG_PATH" 2>/dev/null | grep "adapter:" | head -1 | awk '{print $2}')
+            SQL_DATABASE=$(grep -A10 "^source:" "$CONFIG_PATH" 2>/dev/null | grep "database:" | head -1 | awk '{print $2}')
+            echo "   SQL адаптер: $SQL_ADAPTER"
+            echo "   База данных: $SQL_DATABASE"
+            ;;
+        http)
+            HTTP_URL=$(grep -A15 "^source:" "$CONFIG_PATH" 2>/dev/null | grep "url:" | head -1 | awk '{print $2}')
+            echo "   HTTP URL: $HTTP_URL"
+            ;;
+    esac
+fi
+
+# 7. ВЫВОД (OUTPUT)
+echo ""
+echo "💾 ВЫВОД (OUTPUT):"
+if [ -n "$CONFIG_PATH" ]; then
+    OUTPUT_TYPE=$(grep -A2 "^output:" "$CONFIG_PATH" 2>/dev/null | grep "default:" | head -1 | awk '{print $2}')
+    echo "   Тип вывода: ${OUTPUT_TYPE:-не определен}"
+    
+    case "$OUTPUT_TYPE" in
+        git)
+            GIT_REPO=$(grep -A10 "^output:" "$CONFIG_PATH" 2>/dev/null | grep "repo:" | head -1 | awk '{print $2}')
+            GIT_USER=$(grep -A10 "^output:" "$CONFIG_PATH" 2>/dev/null | grep "user:" | head -1 | awk '{print $2}')
+            GIT_EMAIL=$(grep -A10 "^output:" "$CONFIG_PATH" 2>/dev/null | grep "email:" | head -1 | awk '{print $2}')
+            
+            # Заменяем ~ на полный путь
+            GIT_REPO=$(echo "$GIT_REPO" | sed "s|~|$HOME|g")
+            
+            echo "   Git репозиторий: $GIT_REPO"
+            echo "   Git user: $GIT_USER"
+            echo "   Git email: $GIT_EMAIL"
+            
+            if [ -d "$GIT_REPO" ]; then
+                cd "$GIT_REPO" 2>/dev/null
+                COMMIT_COUNT=$(git rev-list --all --count 2>/dev/null)
+                LAST_COMMIT=$(git log -1 --format="%h - %ad" 2>/dev/null)
+                echo "   Коммитов: ${COMMIT_COUNT:-0}"
+                echo "   Последний коммит: ${LAST_COMMIT:-нет}"
+            fi
+            ;;
+        file)
+            FILE_DIR=$(grep -A5 "^output:" "$CONFIG_PATH" 2>/dev/null | grep "directory:" | head -1 | awk '{print $2}')
+            echo "   Директория: $FILE_DIR"
+            if [ -d "$FILE_DIR" ]; then
+                FILE_COUNT=$(find "$FILE_DIR" -type f 2>/dev/null | wc -l)
+                echo "   Файлов конфигураций: $FILE_COUNT"
+            fi
+            ;;
+    esac
+fi
+
+# 8. REST API И ВЕБ-ИНТЕРФЕЙС
+echo ""
+echo "🌐 REST API И ВЕБ-ИНТЕРФЕЙС:"
+if [ -n "$CONFIG_PATH" ]; then
+    REST_ADDR=$(grep "^rest:" "$CONFIG_PATH" 2>/dev/null | awk '{print $2}')
+    if [ -n "$REST_ADDR" ]; then
+        echo "   Адрес: $REST_ADDR"
+        
+        # Проверяем доступность API
+        if command -v curl &> /dev/null; then
+            API_URL="http://${REST_ADDR}/nodes"
+            if curl -s -o /dev/null -w "%{http_code}" "$API_URL" 2>/dev/null | grep -q "200"; then
+                echo "   API доступен: ✅"
+                # Получаем количество узлов через API
+                NODES_COUNT=$(curl -s "$API_URL" 2>/dev/null | grep -o '"name"' | wc -l)
+                echo "   Узлов в API: $NODES_COUNT"
+            else
+                echo "   API недоступен: ❌"
+            fi
+        fi
+    else
+        echo "   ⚠️ REST API не настроен (oxidized-web не установлен?)"
+    fi
+fi
+
+# 9. ПРОВЕРКА НАЛИЧИЯ MODELS (поддерживаемых устройств)
+echo ""
+echo "📱 ПОДДЕРЖИВАЕМЫЕ МОДЕЛИ УСТРОЙСТВ:"
+if command -v oxidized &> /dev/null; then
+    # Поиск директории с моделями
+    GEM_PATH=$(gem which oxidized 2>/dev/null | sed 's/\/lib\/oxidized\.rb//')
+    if [ -d "${GEM_PATH}/lib/oxidized/model" ]; then
+        MODEL_COUNT=$(ls -1 ${GEM_PATH}/lib/oxidized/model/*.rb 2>/dev/null | wc -l)
+        echo "   Всего моделей: $MODEL_COUNT"
+        echo "   Примеры моделей:"
+        ls -1 ${GEM_PATH}/lib/oxidized/model/*.rb 2>/dev/null | head -10 | xargs -n1 basename | sed 's/\.rb$//' | sed 's/^/     /'
+    fi
+fi
+
+# 10. ПОРТЫ И СЕТЬ
+echo ""
+echo "🔌 ПОРТЫ И СЕТЬ:"
+if command -v ss &> /dev/null; then
+    # Порты REST API
+    if [ -n "$REST_ADDR" ]; then
+        PORT=$(echo "$REST_ADDR" | cut -d':' -f2)
+        echo "   REST API порт $PORT:"
+        ss -tlnp 2>/dev/null | grep ":$PORT" | sed 's/^/     /'
+    fi
+fi
+
+# 11. ЛОГИ OXIDIZED
+echo ""
+echo "📄 ЛОГИ OXIDIZED:"
+LOG_DIRS=("/var/log/oxidized" "/home/oxidized/.config/oxidized" "/root/.config/oxidized")
+for dir in "${LOG_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        LOG_FILES=$(find "$dir" -name "*.log" -type f 2>/dev/null | head -3)
+        if [ -n "$LOG_FILES" ]; then
+            echo "   Логи в $dir:"
+            for log in $LOG_FILES; do
+                LOG_SIZE=$(du -h "$log" 2>/dev/null | cut -f1)
+                echo "     $(basename "$log"): $LOG_SIZE"
+            done
+            
+            # Последние ошибки
+            ERROR_LOG=$(find "$dir" -name "*.log" -type f 2>/dev/null | head -1)
+            if [ -f "$ERROR_LOG" ]; then
+                echo "   Последние ошибки (из последнего лога):"
+                grep -i "error\|fail" "$ERROR_LOG" 2>/dev/null | tail -5 | sed 's/^/     /'
+            fi
+            break
+        fi
+    fi
+done
+
+# 12. РЕСУРСЫ СЕРВЕРА
+echo ""
+echo "💻 РЕСУРСЫ СЕРВЕРА:"
+echo "   CPU: $(nproc) ядер"
+echo "   RAM: $(free -h | grep Mem | awk '{print $2}') всего, $(free -h | grep Mem | awk '{print $4}') свободно"
+echo "   Диск: $(df -h / | awk 'NR==2 {print $2}') всего, $(df -h / | awk 'NR==2 {print $4}') свободно"
+echo "   Нагрузка: $(uptime | awk -F'load average:' '{print $2}' | xargs)"
+
+# 13. ПРОЦЕССЫ OXIDIZED
+echo ""
+echo "⚙️ ПРОЦЕССЫ:"
+ps aux | grep -E "oxidized|puma" | grep -v grep | awk '{print "     " $11 " (PID: " $2 ", CPU: " $3 "%, MEM: " $4 "%)"}'
+
+# 14. ГРУППЫ УСТРОЙСТВ (если есть)
+echo ""
+echo "📁 ГРУППЫ УСТРОЙСТВ:"
+# Поиск директорий групп в выводе Git
+if [ -n "$GIT_REPO" ] && [ -d "$GIT_REPO" ]; then
+    GROUPS=$(find "$GIT_REPO" -maxdepth 1 -type d 2>/dev/null | tail -n +2 | xargs -n1 basename)
+    if [ -n "$GROUPS" ]; then
+        echo "   Найденные группы:"
+        echo "$GROUPS" | sed 's/^/     /'
+    else
+        echo "   ⚠️ Группы не обнаружены"
+    fi
+fi
+
+# 15. ИНТЕГРАЦИЯ С LIBRENMS (если есть)
+echo ""
+echo "🔄 ИНТЕГРАЦИЯ С LIBRENMS:"
+if command -v lnms &> /dev/null; then
+    OXIDIZED_ENABLED=$(sudo -u librenms lnms config:get oxidized.enabled 2>/dev/null)
+    if [ "$OXIDIZED_ENABLED" = "true" ]; then
+        echo "   ✅ Интеграция включена"
+        OXIDIZED_URL=$(sudo -u librenms lnms config:get oxidized.url 2>/dev/null)
+        echo "   URL: $OXIDIZED_URL"
+    else
+        echo "   ⚠️ Интеграция не настроена"
+    fi
+else
+    echo "   ⚠️ LibreNMS не обнаружен"
+fi
+
+# 16. СТАТИСТИКА РАБОТЫ (если есть доступ к БД)
+echo ""
+echo "📊 СТАТИСТИКА РАБОТЫ:"
+if [ -n "$GIT_REPO" ] && [ -d "$GIT_REPO" ]; then
+    cd "$GIT_REPO" 2>/dev/null
+    # Количество уникальных устройств в Git
+    UNIQUE_DEVICES=$(git ls-tree -r HEAD --name-only 2>/dev/null | grep -v "^$" | sort -u | wc -l)
+    echo "   Устройств в Git репозитории: $UNIQUE_DEVICES"
+    
+    # Размер репозитория
+    REPO_SIZE=$(du -sh "$GIT_REPO" 2>/dev/null | cut -f1)
+    echo "   Размер репозитория: $REPO_SIZE"
+fi
+
+# 17. ПРОВЕРКА CREDENTIALS (безопасность)
+echo ""
+echo "🔐 БЕЗОПАСНОСТЬ:"
+if [ -n "$CONFIG_PATH" ]; then
+    # Проверяем наличие паролей в конфиге
+    if grep -q "^password:" "$CONFIG_PATH" 2>/dev/null; then
+        echo "   ⚠️ Пароль по умолчанию указан в конфиге (не рекомендуется)"
+    fi
+    
+    # Проверяем права доступа к конфигу
+    CONFIG_PERMS=$(stat -c '%a' "$CONFIG_PATH" 2>/dev/null)
+    if [ "$CONFIG_PERMS" -gt 640 ]; then
+        echo "   ⚠️ Конфиг доступен для чтения другим пользователям (perms: $CONFIG_PERMS)"
+    else
+        echo "   ✅ Права на конфиг корректны"
+    fi
+fi
+
+echo ""
+echo "========================================="
+echo "✅ ПРОВЕРКА ЗАВЕРШЕНА"
+echo "========================================="
