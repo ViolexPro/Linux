@@ -1,0 +1,78 @@
+---
+rest: 0.0.0.0:8888
+username: oxidized
+password: oxidized
+model: junos
+resolve_dns: true
+interval: 3600
+use_syslog: false
+debug: false
+run_once: false
+threads: 30
+use_max_threads: false
+timeout: 200
+timelimit: 300
+retries: 3
+prompt: !ruby/regexp /^([\w.@-]+[#>]\s?)$/
+next_adds_job: false
+vars: {}
+groups: {}
+group_map: {}
+models: {}
+pid: "/home/oxidized/.config/oxidized/pid"
+log: "/home/oxidized/.config/oxidized/logs/log"
+log_size: 10485760  # 10 MB
+log_count: 5        # 5 ротаций
+extensions:
+  oxidized-web:
+    load: true   # <-- ИЗМЕНИТЬ на true
+crash:
+  directory: "/home/oxidized/.config/oxidized/crashes"
+  hostnames: false
+stats:
+  history_size: 10
+input:
+  default: ssh, telnet
+  debug: true
+  ssh:
+    encryption: ['aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc', 'blowfish-cbc']
+    kex: ['diffie-hellman-group1-sha1', 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1']
+    hmac: ['hmac-sha1', 'hmac-md5', 'hmac-sha1-96', 'hmac-md5-96']
+    host_key: ['ssh-rsa', 'ssh-dss']
+    keys_only: false
+    password_prompt: 'password:|Password:|login failure'
+    verify_host_key: false
+    number_of_password_prompts: 1
+  ftp:
+    passive: true
+  utf8_encoded: true
+map:
+  verify_host_key: never
+  utf8_encoded: true
+
+output:
+  default: git
+  file:
+    directory: "/home/oxidized/.config/oxidized/configs"
+  git:
+     user: oxidized
+     email: admin_asu@pzsp.ru
+     repo: "/home/oxidized/.config/oxidized/devices.git"
+source:
+  default: csv
+  csv:
+    file: "/home/oxidized/.config/oxidized/router.db"
+    delimiter: !ruby/regexp /:/
+    map:
+      name: 0
+      ip: 1
+      model: 2
+      username: 3
+      password: 4
+    vars_map:
+      enable: 5
+model_map:
+  Cisco: ios
+  mikrotik: routeros
+  huawei: vrp
+  bdcom: bdcom
