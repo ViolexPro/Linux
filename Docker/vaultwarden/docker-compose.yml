@@ -1,0 +1,20 @@
+#version: '3.8'
+
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    container_name: vaultwarden
+    restart: always
+    environment:
+      WEBSOCKET_ENABLED: "true"  # Enable WebSocket notifications.
+      SIGNUPS_ALLOWED: "true"
+      DOMAIN: "http://172.16.0.42:8080"
+    volumes:
+      - ./vw-data:/data
+    ports:
+      - "8080:80"
