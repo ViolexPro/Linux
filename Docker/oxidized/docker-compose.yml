@@ -1,0 +1,15 @@
+services:
+  oxidized:
+    restart: always
+    image: docker.io/oxidized/oxidized:latest
+    container_name: oxidized
+    ports:
+      - 8888:8888/tcp
+    environment:
+      # Reload hosts list once per day
+      CONFIG_RELOAD_INTERVAL: 86400
+#    user: "30000:30000"  # Замените на UID:GID пользователя oxidized на хосте
+#    command: ["oxidized", "-d"]  # Запуск в режиме отладки для видимости логов
+    volumes:
+       - /opt/oxidized/config:/home/oxidized/.config/oxidized/
+       - /opt/oxidized/output:/home/oxidized/.config/oxidized/output
