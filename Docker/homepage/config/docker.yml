@@ -1,0 +1,24 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/docker/
+
+# my-docker:
+#   host: 127.0.0.1
+#   port: 2375
+ local-docker:
+   host: dockerproxy
+   port: 2375
+ n8n-docker:
+   host: 172.16.0.40
+   port: 2375
+ mattermost-docker:
+   host: 172.16.0.39
+   port: 2375
+ gitea-dockmost-docker:
+   host: 172.16.0.37
+   port: 2375
+ xwiki-docker:
+   host: 172.16.0.35
+   port: 2375
+# my-docker:
+#   socket: /var/run/docker.sock
