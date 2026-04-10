@@ -7,8 +7,8 @@
 #        icon: n8n.png
 #        href: https://n8n.pzsp.ru                    # ваш IP и порт
 #        description: Автоматизация рабочих процессов # описание
-#        server: n8n-docker                           # опционально
-#        container: n8n-n8n-1                         # если используете Docker
+#        server: n8n-docker                           # опционально настраивается в dcoker.yml
+#        container: n8n-n8n-1                         # если используете Docker настраивается в dcoker.yml
 
 - Работа и автоматизация:
     - n8n:
