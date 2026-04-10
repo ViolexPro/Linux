@@ -1,0 +1,90 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/services/
+
+#- Работа и автоматизация:
+#    - n8n:
+#        icon: n8n.png
+#        href: https://n8n.pzsp.ru                    # ваш IP и порт
+#        description: Автоматизация рабочих процессов # описание
+#        server: n8n-docker                           # опционально
+#        container: n8n-n8n-1                         # если используете Docker
+
+- Работа и автоматизация:
+    - n8n:
+        icon: n8n.png
+        href: https://n8n.pzsp.ru                    # ваш IP и порт
+        description: Автоматизация рабочих процессов # описание
+        server: n8n-docker                           # опционально
+        container: n8n-n8n-1                         # если используете Docker
+
+    - Gitea:
+        icon: gitea.png
+        href: https://gitea.pzsp.ru
+        description: Git-репозитории и CI/CD
+        server: gitea-dockmost-docker
+        container: gitea
+        widget:
+          type: gitea
+          url: http://172.16.0.37:3000
+          key: '0fe90d3f4bf2944d9e800d8328b7b76a4f4d8b19'
+
+- Мониторинг:
+    - Zabbix:
+        icon: zabbix.png
+        href: http://172.16.10.152:8080
+        description: zabbix
+        ping: 172.16.10.152
+        widget:
+          type: zabbix
+          url: http://172.16.10.152:8080
+          key: 33a6495dd52ffee5d3e5fc9ace2239a4846355741a4329669d27ee9dfbe94b19
+    - WUD:
+        icon: https://avatars.githubusercontent.com/u/185776544?s=200&v=4
+        href: https://wud.pzsp.ru
+        widget:
+          type: whatsupdocker
+          url: http://172.16.0.41:3030
+
+- Коммуникация:
+    - Mattermost:
+        icon: mattermost.png
+        href: https://mattermost.pzsp.ru
+        description: Корпоративный мессенджер
+        server: mattermost-docker
+        container: mattermost
+
+    - Exchange:
+        icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/microsoft-exchange.png
+        href: https://srv-mbx1.pzsp.ru/owa
+        description: Корпоративная почта
+        ping: 172.16.10.14
+
+- Документация:
+    - bookstack:
+        icon: bookstack.png
+        href: https://bookstack.pzsp.ru
+        description: wiki
+        server: local-docker
+        container: bookstack
+
+    - Docmost:
+        icon: docmost.png
+        href: https://docmost.pzsp.ru
+        description: wiki
+        server: gitea-dockmost-docker
+        container: docmost-docmost-1
+
+    - WikiJs:
+        icon: wikijs.png
+        href: https://wikijs.pzsp.ru
+        description: wiki
+        server: local-docker
+        container: wikijs-wiki-1
+
+    - Wiki:
+        icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/xwiki.png
+        href: https://wiki.pzsp.ru
+        description: wiki
+        server: xwiki-docker
+        container: xwiki-postgres-tomcat-web
