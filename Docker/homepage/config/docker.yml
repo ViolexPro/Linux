@@ -20,5 +20,12 @@
  xwiki-docker:
    host: 172.16.0.35
    port: 2375
+ oxidized-docker:
+   host: 172.16.0.42
+   port: 2375
+ vaultwarden-docker:
+   host: 172.16.0.42
+   port: 2375
+
 # my-docker:
 #   socket: /var/run/docker.sock
