@@ -1,3 +1,4 @@
+---
 services:
   wud:
     image: getwud/wud:latest
