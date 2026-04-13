@@ -1,0 +1,18 @@
+---
+services:
+  nginx-ui:
+    image: uozi/nginx-ui:latest
+    container_name: nginx-ui
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - /opt/nginxui/nginx/auth/.htpasswd:/etc/nginx/auth/.htpasswd
+      - /opt/nginxui/nginx:/etc/nginx
+      - /opt/nginxui/nginx-ui:/etc/nginx-ui
+      - /opt/nginxui/www:/var/www
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/nginxui/nginx-ui/ssl:/etc/nginx-ui/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
