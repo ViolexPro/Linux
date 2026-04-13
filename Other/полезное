@@ -1,0 +1,2 @@
+# Проверьте, видит ли systemd-resolved ваш DNS
+resolvectl status eth0 | grep "DNS Servers"
