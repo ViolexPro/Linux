@@ -1,0 +1,17 @@
+services:
+  nginx-ui-agent:
+    image: uozi/nginx-ui:latest
+    container_name: nginx-ui-agent
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - /opt/nginx/ssl:/etc/nginx-ui/ssl:ro
+      # Монтируем папку с конфигами существующего Nginx
+      - /opt/nginx:/etc/nginx
+      # Монтируем папку для данных самого агента
+      - /opt/nginx-ui/nginx-ui:/etc/nginx-ui
+      # Монтируем сокет Docker, чтобы управлять контейнером Nginx
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "9000:9000" # Порт для связи с мастером (только локально)
