@@ -19,7 +19,7 @@ services:
       TZ: Europe/Moscow
       MM_SQLSETTINGS_DRIVERNAME: postgres
       MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:${POSTGRES_PASSWORD}@postgres:5432/mattermost?sslmode=disable
-      MM_SERVICESETTINGS_SITEURL: http://mattermost.pzsp.ru:8065
+      MM_SERVICESETTINGS_SITEURL: https://mattermost.pzsp.ru
 
   postgres:
     image: postgres:16-alpine
