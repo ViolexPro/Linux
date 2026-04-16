@@ -1,0 +1,349 @@
+#!/bin/bash
+echo "========================================="
+echo "☁️ PROVERKA OWNCLOUD SERVERA"
+echo "========================================="
+
+# 1. OPERACIONNAYa SISTEMA
+echo ""
+echo "📀 OPERACIONNAYa SISTEMA:"
+cat /etc/os-release | grep -E "PRETTY_NAME|VERSION_ID" || lsb_release -a 2>/dev/null
+echo "Versiya yadra: $(uname -r)"
+echo "Hostneym: $(hostname)"
+echo "IP-adresa: $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | tr '\n' ' ')"
+
+# 2. POISK DIREKTORII USTANOVKI OWNCLOUD
+echo ""
+echo "☁️ OWNCLOUD USTANOVKA:"
+OWNCLOUD_PATHS=("/var/www/owncloud" "/var/www/html/owncloud" "/usr/share/owncloud" "/opt/owncloud")
+OWNCLOUD_DIR=""
+for path in "${OWNCLOUD_PATHS[@]}"; do
+    if [ -f "$path/config/config.php" ]; then
+        OWNCLOUD_DIR="$path"
+        echo "   ✅ Nayden v: $OWNCLOUD_DIR"
+        break
+    fi
+done
+
+if [ -z "$OWNCLOUD_DIR" ]; then
+    echo "   ❌ ownCloud ne nayden v standartnyh direktoriyah"
+    echo "   🔍 Poisk po vsey sisteme (mozhet zanyat' vremya)..."
+    OWNCLOUD_DIR=$(find / -name "config.php" -path "*/config/config.php" 2>/dev/null | head -1 | xargs dirname 2>/dev/null)
+    if [ -n "$OWNCLOUD_DIR" ]; then
+        echo "   ✅ Nayden v: $OWNCLOUD_DIR"
+    else
+        echo "   ❌ ownCloud ne nayden"
+        exit 1
+    fi
+fi
+
+# 3. VERSIYa OWNCLOUD
+echo ""
+echo "📌 VERSIYa OWNCLOUD:"
+if [ -f "$OWNCLOUD_DIR/version.php" ]; then
+    OC_VERSION=$(grep "\$OC_VersionString" "$OWNCLOUD_DIR/version.php" 2>/dev/null | cut -d"'" -f2)
+    OC_MAJOR=$(grep "\$OC_Version" "$OWNCLOUD_DIR/version.php" 2>/dev/null | head -1 | cut -d"'" -f2 | cut -d'.' -f1)
+    echo "   Versiya: ${OC_VERSION:-ne opredelena}"
+    echo "   Major: ${OC_MAJOR:-?}"
+fi
+
+# 4. PROVERKA PHP
+echo ""
+echo "🐘 PHP:"
+if command -v php &> /dev/null; then
+    PHP_VERSION=$(php -v 2>&1 | head -1)
+    echo "   $PHP_VERSION"
+    
+    echo "   Kritichnye moduli:"
+    for mod in pdo_mysql mysqli gd curl mbstring xml zip intl ldap; do
+        if php -m 2>/dev/null | grep -qi "^$mod$"; then
+            echo "     ✅ $mod"
+        else
+            echo "     ❌ $mod (otsutstvuet)"
+        fi
+    done
+    
+    MEM_LIMIT=$(php -i 2>/dev/null | grep "memory_limit" | head -1 | awk '{print $3}')
+    echo "   memory_limit: $MEM_LIMIT"
+    
+    MAX_EXEC=$(php -i 2>/dev/null | grep "max_execution_time" | head -1 | awk '{print $3}')
+    echo "   max_execution_time: $MAX_EXEC sek"
+    
+    UPLOAD_MAX=$(php -i 2>/dev/null | grep "upload_max_filesize" | head -1 | awk '{print $3}')
+    echo "   upload_max_filesize: $UPLOAD_MAX"
+    
+    POST_MAX=$(php -i 2>/dev/null | grep "post_max_size" | head -1 | awk '{print $3}')
+    echo "   post_max_size: $POST_MAX"
+else
+    echo "   ❌ PHP ne ustanovlen"
+fi
+
+# 5. VEB-SERVER
+echo ""
+echo "🌐 VEB-SERVER:"
+if command -v nginx &> /dev/null; then
+    echo "   ✅ Nginx: $(nginx -v 2>&1)"
+    systemctl is-active --quiet nginx 2>/dev/null && echo "   Status: 🟢 Active" || echo "   Status: 🔴 Ne aktiven"
+elif command -v apache2 &> /dev/null; then
+    echo "   ✅ Apache: $(apache2 -v 2>&1 | head -1)"
+    systemctl is-active --quiet apache2 2>/dev/null && echo "   Status: 🟢 Active" || echo "   Status: 🔴 Ne aktiven"
+elif command -v httpd &> /dev/null; then
+    echo "   ✅ Apache (httpd): $(httpd -v 2>&1 | head -1)"
+    systemctl is-active --quiet httpd 2>/dev/null && echo "   Status: 🟢 Active" || echo "   Status: 🔴 Ne aktiven"
+else
+    echo "   ❌ Veb-server ne obnaruzhen"
+fi
+
+# 6. BAZA DANNYH
+echo ""
+echo "🗄️ BAZA DANNYH:"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    DB_TYPE=$(grep "'dbtype'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    DB_NAME=$(grep "'dbname'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    DB_USER=$(grep "'dbuser'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    DB_HOST=$(grep "'dbhost'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    
+    echo "   Tip: ${DB_TYPE:-ne opredelen}"
+    echo "   Baza: ${DB_NAME:-ne opredelena}"
+    echo "   Pol'zovatel': ${DB_USER:-ne opredelen}"
+    echo "   Host: ${DB_HOST:-localhost}"
+fi
+
+if command -v mysql &> /dev/null; then
+    MYSQL_VER=$(mysql --version 2>/dev/null)
+    echo "   MySQL/MariaDB: $MYSQL_VER"
+    
+    if [ -n "$DB_NAME" ] && [ -n "$DB_USER" ]; then
+        if mysql -u"$DB_USER" -D"$DB_NAME" -e "SELECT 1" &>/dev/null 2>&1; then
+            echo "   Podklyuchenie k BD: 🟢 OK"
+            
+            DB_SIZE=$(mysql -u"$DB_USER" -D"$DB_NAME" -sN -e "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) FROM information_schema.TABLES WHERE table_schema='$DB_NAME'" 2>/dev/null)
+            echo "   Razmer BD: ${DB_SIZE:-0} MB"
+        else
+            echo "   Podklyuchenie k BD: 🔴 Oshibka (trebuetsya parol')"
+        fi
+    fi
+fi
+
+# 7. DIREKTORIYa DANNYH
+echo ""
+echo "📁 DIREKTORIYa DANNYH:"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    DATA_DIR=$(grep "'datadirectory'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    if [ -n "$DATA_DIR" ]; then
+        echo "   Put': $DATA_DIR"
+        if [ -d "$DATA_DIR" ]; then
+            DATA_SIZE=$(du -sh "$DATA_DIR" 2>/dev/null | cut -f1)
+            DATA_FILES=$(find "$DATA_DIR" -type f 2>/dev/null | wc -l)
+            echo "   Razmer: $DATA_SIZE"
+            echo "   Faylov: $DATA_FILES"
+            
+            DATA_OWNER=$(stat -c '%U' "$DATA_DIR" 2>/dev/null)
+            DATA_PERMS=$(stat -c '%a' "$DATA_DIR" 2>/dev/null)
+            echo "   Vladelec: $DATA_OWNER"
+            echo "   Prava: $DATA_PERMS"
+        else
+            echo "   ⚠️ Direktoriya ne sushchestvuet!"
+        fi
+    else
+        echo "   ⚠️ datadirectory ne ukazan v config.php"
+    fi
+fi
+
+# 8. OSNOVNYE NASTROYKI IZ CONFIG.PHP
+echo ""
+echo "⚙️ OSNOVNYE NASTROYKI:"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    echo "   Doverennye domeny:"
+    grep "'trusted_domains'" -A5 "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | grep -E "^\\s+[0-9]+" | sed 's/^/     /'
+    
+    DEFAULT_QUOTA=$(grep "'default_quota'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    echo "   Kvota po umolchaniyu: ${DEFAULT_QUOTA:-ne zadana}"
+    
+    if grep -q "'ldapProviderFactory'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+        echo "   LDAP: ✅ vklyuchen"
+    fi
+    
+    if grep -q "'maintenance' => true" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+        echo "   Rezhim obsluzhivaniya: 🔴 VKLYuChEN"
+    else
+        echo "   Rezhim obsluzhivaniya: 🟢 Vyklyuchen"
+    fi
+    
+    if grep -q "'version'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+        CONFIG_VERSION=$(grep "'version'" "$OWNCLOUD_DIR/config/config.php" | head -1 | cut -d"'" -f4)
+        echo "   Versiya v config: $CONFIG_VERSION"
+    fi
+    
+    if grep -q "'forcessl' => true" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+        echo "   Prinuditel'nyy HTTPS: ✅"
+    else
+        echo "   Prinuditel'nyy HTTPS: ❌"
+    fi
+fi
+
+# 9. KEShIROVANIE
+echo ""
+echo "⚡ KEShIROVANIE:"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    if php -m 2>/dev/null | grep -qi "apcu"; then
+        if grep -q "'memcache.local' => '\\\\OC\\\\Memcache\\\\APCu'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+            echo "   APCu: ✅ nastroyen"
+        else
+            echo "   APCu: ❌ ustanovlen, no ne nastroyen v config.php"
+        fi
+    else
+        echo "   APCu: ❌ ne ustanovlen"
+    fi
+    
+    if php -m 2>/dev/null | grep -qi "redis"; then
+        if grep -q "'memcache.distributed' => '\\\\OC\\\\Memcache\\\\Redis'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null; then
+            echo "   Redis: ✅ nastroyen (distributed)"
+            REDIS_HOST=$(grep "'redis' => array" -A3 "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | grep "'host'" | cut -d"'" -f4)
+            [ -n "$REDIS_HOST" ] && echo "     Host: $REDIS_HOST"
+        else
+            echo "   Redis: ❌ ustanovlen, no ne nastroyen v config.php"
+        fi
+    else
+        echo "   Redis: ❌ ne ustanovlen"
+    fi
+    
+    if php -m 2>/dev/null | grep -qi "memcached"; then
+        echo "   Memcached: ✅ ustanovlen"
+    fi
+fi
+
+# 10. FONOVYE ZADANIYa (CRON)
+echo ""
+echo "⏰ FONOVYE ZADANIYa (CRON):"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    BACKGROUND_MODE=$(grep "'backgroundjobs_mode'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    echo "   Rezhim: ${BACKGROUND_MODE:-ne zadan (po umolchaniyu 'ajax')}"
+    
+    if [ "$BACKGROUND_MODE" = "cron" ]; then
+        if crontab -l 2>/dev/null | grep -q "cron.php"; then
+            echo "   Cron zadacha: ✅ nastroyena"
+            CRON_CMD=$(crontab -l 2>/dev/null | grep "cron.php" | head -1)
+            echo "   Komanda: $CRON_CMD"
+        else
+            echo "   Cron zadacha: ❌ ne naydena"
+        fi
+    fi
+fi
+
+# 11. POLZOVATELI
+echo ""
+echo "👥 POLZOVATELI:"
+if command -v sudo &> /dev/null && [ -f "$OWNCLOUD_DIR/occ" ]; then
+    WEB_USER=$(ps aux | grep -E "apache|www-data|nginx" | grep -v grep | head -1 | awk '{print $1}')
+    echo "   Zapusk occ ot pol'zovatelya: $WEB_USER"
+    
+    USER_COUNT=$(sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" user:list 2>/dev/null | grep -c " - ")
+    echo "   Vsego pol'zovateley: $USER_COUNT"
+    
+    echo "   Pervye 10 pol'zovateley:"
+    sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" user:list 2>/dev/null | head -10 | sed 's/^/     /'
+fi
+
+# 12. PRILOZhENIYa (APPS)
+echo ""
+echo "📦 PRILOZhENIYa (APPS):"
+if [ -f "$OWNCLOUD_DIR/occ" ]; then
+    WEB_USER=$(ps aux | grep -E "apache|www-data|nginx" | grep -v grep | head -1 | awk '{print $1}')
+    APP_COUNT=$(sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" app:list 2>/dev/null | grep -c "^  - ")
+    echo "   Vsego prilozheniy: $APP_COUNT"
+    echo "   Vklyuchennye prilozheniya:"
+    sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" app:list 2>/dev/null | grep -E "^  - [^:]+:" | head -10 | sed 's/^/     /'
+fi
+
+# 13. PROVERKA INTEGRITY
+echo ""
+echo "🔒 INTEGRITY CHECK:"
+if [ -f "$OWNCLOUD_DIR/occ" ]; then
+    WEB_USER=$(ps aux | grep -E "apache|www-data|nginx" | grep -v grep | head -1 | awk '{print $1}')
+    echo "   Zapusk proverki celostnosti..."
+    INTEGRITY_RESULT=$(sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" integrity:check 2>&1)
+    if echo "$INTEGRITY_RESULT" | grep -qi "error"; then
+        echo "   ⚠️ Obnaruzheny problemy:"
+        echo "$INTEGRITY_RESULT" | grep -i error | head -5 | sed 's/^/     /'
+    else
+        echo "   ✅ Proverka proydena"
+    fi
+fi
+
+# 14. LOGI OWNCLOUD
+echo ""
+echo "📄 LOGI OWNCLOUD:"
+if [ -f "$OWNCLOUD_DIR/config/config.php" ]; then
+    LOG_FILE=$(grep "'logfile'" "$OWNCLOUD_DIR/config/config.php" 2>/dev/null | cut -d"'" -f4)
+    if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+        LOG_SIZE=$(du -h "$LOG_FILE" 2>/dev/null | cut -f1)
+        echo "   Fayl: $LOG_FILE ($LOG_SIZE)"
+        
+        echo "   Poslednie oshibki:"
+        tail -20 "$LOG_FILE" 2>/dev/null | grep -iE "error|fatal|exception" | tail -5 | sed 's/^/     /'
+    else
+        echo "   ⚠️ Log fayl ne nayden ili ne nastroyen"
+    fi
+fi
+
+# 15. LOGI VEB-SERVERA
+echo ""
+echo "📄 LOGI VEB-SERVERA:"
+WEB_LOG_DIRS=("/var/log/apache2" "/var/log/httpd" "/var/log/nginx")
+for dir in "${WEB_LOG_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        LOG_SIZE=$(du -sh "$dir" 2>/dev/null | cut -f1)
+        echo "   $dir: $LOG_SIZE"
+        
+        if [ -f "$dir/error.log" ]; then
+            echo "   Poslednie oshibki iz error.log:"
+            tail -5 "$dir/error.log" 2>/dev/null | grep -iE "error|owncloud" | head -3 | sed 's/^/     /'
+        fi
+        break
+    fi
+done
+
+# 16. PORTY I SET
+echo ""
+echo "🔌 PORTY I SET':"
+if command -v ss &> /dev/null; then
+    echo "   HTTP/HTTPS porty:"
+    ss -tlnp 2>/dev/null | grep -E ":80 |:443 " | sed 's/^/     /'
+fi
+
+# 17. RESURSY SERVERA
+echo ""
+echo "💻 RESURSY SERVERA:"
+echo "   CPU: $(nproc) yader"
+echo "   RAM: $(free -h | grep Mem | awk '{print $2}') vsego, $(free -h | grep Mem | awk '{print $4}') svobodno"
+echo "   Disk: $(df -h / | awk 'NR==2 {print $2}') vsego, $(df -h / | awk 'NR==2 {print $4}') svobodno"
+echo "   Nagruzka: $(uptime | awk -F'load average:' '{print $2}' | xargs)"
+
+# 18. PROCESSY
+echo ""
+echo "⚙️ PROCESSY:"
+ps aux | grep -E "php-fpm|apache|nginx" | grep -v grep | head -5 | awk '{print "     " $11 " (PID: " $2 ", CPU: " $3 "%, MEM: " $4 "%)"}'
+
+# 19. STATUS SISTEMY
+echo ""
+echo "🔬 STATUS SISTEMY (occ status):"
+if [ -f "$OWNCLOUD_DIR/occ" ]; then
+    WEB_USER=$(ps aux | grep -E "apache|www-data|nginx" | grep -v grep | head -1 | awk '{print $1}')
+    sudo -u "$WEB_USER" php "$OWNCLOUD_DIR/occ" status 2>/dev/null | sed 's/^/     /'
+fi
+
+# 20. PROVERKI BEZOPASNOSTI
+echo ""
+echo "⚠️ PROVERKI BEZOPASNOSTI:"
+echo "   Sleduyushchie punkty rekomenduetsya proverit' vruchnuyu:"
+echo "     - Nastroen li HTTPS (ne ispol'zuetsya HTTP)"
+echo "     - Nastroen li zagolovok HSTS"
+echo "     - Nastroen li kesh (APCu/Redis/Memcached)"
+echo "     - Ispol'zuetsya li system cron dlya fonovyh zadach"
+echo "     - Proverena li tranzakcionnaya blokirovka faylov"
+echo "     - Nastroena li READ COMMITTED izolyaciya v BD"
+
+echo ""
+echo "========================================="
+echo "✅ PROVERKA ZAVERSHENA"
+echo "========================================="
