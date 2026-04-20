@@ -6,13 +6,15 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    env_file:
+      - /opt/secrets/.env
     depends_on:
       - db
       - redis
     environment:
       APP_URL: "http://localhost:3000"
-      APP_SECRET: "26a6e6fa2b89fac8ca0e6523d016b403d4a03960366b6db4cb97b7349f8626324b2d8a1e7156408083cf55d3d41f254df17de36160553b3e340d6da0f3ce5cc5eb901c902ddcbf97e001acc79c771bcf5fbbaaaa>
-      DATABASE_URL: "postgresql://docmost:baikal%23RULES123@db:5432/docmost?schema=public"
+      APP_SECRET: ${DOCMOST_APP_SECRET}
+      DATABASE_URL: "postgresql://docmost:${DOCMOST_POSTGRES_PASSWORD}3@db:5432/docmost?schema=public"
       REDIS_URL: "redis://redis:6379"
       # Добавьте эти строки
       STORAGE_DRIVER: "local"
@@ -27,8 +29,10 @@ services:
     restart: unless-stopped
     volumes:
 #      - ./docmost:/app/data/storage
-      - /opt/docmost/docmost/data:/app/data
-      - /opt/docmost/docmost/data/uploads:/app/data/uploads/
+      - /opt/docmost/ssl:/etc/ssl/certs:ro
+#      - /opt/docmost/docmost/data:/app/data
+      - /opt/docmost/docmost/data/storage:/app/data/storage
+      - /opt/docmost/docmost/data/uploads:/app/data/uploads
   db:
     image: postgres:16-alpine
     logging:
@@ -36,10 +40,12 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    env_file:
+      - /opt/secrets/.env
     environment:
       POSTGRES_DB: docmost
-      POSTGRES_USER: docmost
-      POSTGRES_PASSWORD: baikal#RULES123
+      POSTGRES_USER: ${DOCMOST_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${DOCMOST_POSTGRES_PASSWORD}
     restart: unless-stopped
     volumes:
       - ./db_data:/var/lib/postgresql/data
