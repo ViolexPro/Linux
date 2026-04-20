@@ -1,0 +1,185 @@
+Вот тебе всё в одном месте, структурировано и без лишней воды — можно прямо как чек-лист использовать.
+
+🛠️ Проблема: 1С ставится, лог не пишется
+🎯 Цель
+
+Понять на 100%, почему нет записи в:
+
+\\shara\1CScript\LOG
+🚀 1. Самая быстрая проверка (решает 80% случаев)
+Проверка записи от имени SYSTEM
+
+Используй PsExec:
+
+psexec -s cmd.exe
+
+В открывшемся окне:
+
+whoami
+echo test >> \\shara\1CScript\LOG\test.txt
+Результат:
+❌ Access denied → проблема точно в правах
+✔ записалось → проблема в скрипте или пути
+🔐 2. Как работают права (ключевая идея)
+
+Есть 2 уровня прав:
+
+1. Share permissions (права шары)
+вкладка: Sharing
+действуют только по сети
+2. NTFS permissions (файловая система)
+вкладка: Security
+действуют всегда
+⚠️ Главное правило
+
+Итоговые права = минимум из Share и NTFS
+
+Share	NTFS	Итог
+Write	Read	❌ Read
+Full	Read	❌ Read
+Full	Modify	✔ Modify
+🔍 3. Проверка прав
+🔹 Share permissions
+
+Properties → Sharing → Advanced Sharing → Permissions
+
+Должно быть:
+
+Domain Computers → Change
+или
+Authenticated Users → Change
+🔹 NTFS permissions
+
+Properties → Security
+
+Должно быть:
+
+Domain Computers → Modify
+или
+Authenticated Users → Modify
+💣 4. Частая ошибка
+На шаре ✔ всё ок
+На NTFS ❌ только Read
+
+➡️ В итоге запись не работает
+
+🧠 5. Контекст GPO (очень важно)
+
+Если это Startup Script:
+
+выполняется от имени:
+DOMAIN\PC-NAME$
+
+👉 значит нужны права для:
+
+Domain Computers
+
+❌ Users не подойдут
+
+🔍 6. Проверка наследования (часто ломается)
+
+Путь:
+
+\\shara\1CScript\LOG
+
+Открой:
+
+Properties → Security → Advanced
+
+Проверь:
+
+✔ Enable inheritance
+❌ или Inheritance disabled
+💣 Частая реальность
+
+Папка LOG:
+
+создана вручную / скопирована
+inheritance отключен
+права отличаются от родителя
+
+➡️ 1CScript работает
+➡️ LOG — нет
+
+🔧 7. Проверка через CLI
+icacls D:\path\to\1CScript\LOG
+
+Или:
+
+icacls \\shara\1CScript\LOG
+
+Смотри:
+
+есть ли (M) (Modify)
+или только (R) (Read)
+🧪 8. Быстрый тест “это точно права?”
+
+Временно на папку LOG:
+
+Everyone → Full Control
+Результат:
+✔ заработало → проблема в правах (закрыто)
+❌ нет → смотри дальше
+🔎 9. Если вдруг НЕ права
+
+Проверь:
+
+1. Папка существует?
+dir \\shara\1CScript\LOG
+2. Скрипт пишет туда же?
+нет ли старого пути:
+\\shara\1cdistr\LOG
+3. Нет ли ошибок создания папки
+mkdir \\shara\1CScript\LOG
+🧠 10. Почему так происходит
+
+“Родитель доступен → значит и вложенная папка доступна”
+
+❌ Это НЕ гарантируется
+
+Причины:
+
+отключено inheritance
+вручную заданы права
+папка скопирована с другим ACL
+✅ 11. Нормальная схема прав (рекомендую)
+Вариант для GPO (SYSTEM)
+
+Share:
+
+Domain Computers → Change
+
+NTFS:
+
+Domain Computers → Modify
+Универсальный вариант
+
+Share:
+
+Everyone → Full
+
+NTFS:
+
+нормальные ограничения по группам
+
+👉 проще администрировать
+
+📌 Итог
+
+👉 В твоём случае почти наверняка:
+
+❌ папка LOG не имеет нужных NTFS прав
+или
+❌ сломано наследование
+
+💬 Если хочешь быстрее
+
+Скинь:
+
+icacls \\shara\1CScript\LOG
+
+и скажи:
+
+Startup или Logon скрипт
+
+Я скажу точечно, что именно поправить.
