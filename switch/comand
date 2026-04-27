@@ -1,0 +1,8 @@
+sw25#
+show interfaces status
+вывод Gi1/0/19  r10-8 name-pc   connected    100          full  a-100 10/100/1000BaseTX
+Меняем на VLAN 100:
+configure terminal
+interface Gi1/0/19
+switchport access vlan 100
+end
