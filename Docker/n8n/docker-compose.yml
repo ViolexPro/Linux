@@ -1,4 +1,12 @@
 #version: '3.8'
+## Создайте директорию, если её нет
+#sudo mkdir -p /opt/n8n/n8n_storage
+
+# Установите правильного владельца (UID 1000 - пользователь node)
+#sudo chown -R 1000:1000 /opt/n8n/n8n_storage
+
+# Установите правильные права доступа
+#sudo chmod -R 755 /opt/n8n/n8n_storage
 
 volumes:
   db_storage:
