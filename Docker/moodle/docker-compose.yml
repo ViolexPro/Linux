@@ -1,3 +1,10 @@
+#sudo mkdir -p /opt/moodle/moodledata
+#sudo chmod -R 777 /opt/moodle/moodledata
+#docker compose up -d --build
+#после настройки и запуска. добавить русский язык 
+#unzip ru.zip -d /opt/moodle/moodledata/lang/
+#sudo chown -R 33:33 /opt/moodle/moodledata/lang
+#sudo chmod -R 755 /opt/moodle/moodledata/lang
 services:
   mariadb:
     image: mariadb:10.11
@@ -9,9 +16,9 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
-      - /opt/moodle-docker/moodle_db_data:/var/lib/mysql
-    networks:
-      - moodle_network
+      - /opt/moodle/moodle_db_data:/var/lib/mysql
+#    networks:
+#      - moodle_network
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -38,9 +45,9 @@ services:
       - MOODLE_WWWROOT=${MOODLE_WWWROOT}
       - MOODLE_DATAROOT=${MOODLE_DATAROOT}
     volumes:
-      - /opt/moodle-docker/moodledata:/var/www/moodledata
-    networks:
-      - moodle_network
+      - /opt/moodle/moodledata:/var/www/moodledata
+#    networks:
+#      - moodle_network
 
   nginx:
     image: nginx:alpine
@@ -52,15 +59,15 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /opt/moodle-docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /opt/moodle-docker/certificates:/etc/nginx/ssl:ro
-      - /opt/moodle-docker/nginx/auth/.htpasswd:/etc/nginx/auth/.htpasswd
-      - /opt/moodle-docker/nginx/config.d:/etc/nginx/conf.d/
-      - /opt/moodle-docker/nginx/sites-available:/etc/nginx/sites-available/
-      - /opt/moodle-docker/nginx/sites-enabled:/etc/nginx/sites-enabled/
-    networks:
-      - moodle_network
+      - /opt/moodle/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/moodle/nginx/ssl:/etc/nginx/ssl:ro
+      - /opt/moodle/nginx/auth/.htpasswd:/etc/nginx/auth/.htpasswd
+      - /opt/moodle/nginx/config.d:/etc/nginx/conf.d/
+      - /opt/moodle/nginx/sites-available:/etc/nginx/sites-available/
+      - /opt/moodle/nginx/sites-enabled:/etc/nginx/sites-enabled/
+#    networks:
+#      - moodle_network
 
-networks:
-  moodle_network:
-    driver: bridge
+#networks:
+#  moodle_network:
+#    driver: bridge
