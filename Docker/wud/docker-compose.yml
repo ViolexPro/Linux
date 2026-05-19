@@ -1,3 +1,4 @@
+#на клиентах надо поставить docker-socket-proxy (тут есть docker-compose)
 ---
 services:
   wud:
