@@ -1,0 +1,82 @@
+# Отображать ошибки PHP
+
+Решение: Создайте активный php.ini с правильными настройками
+
+```
+ # Войдите в контейнер
+docker exec -it moodle_app bash
+
+# Скопируйте production версию как основной php.ini
+cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+
+# Убедитесь, что display_errors выключен
+grep display_errors /usr/local/etc/php/php.ini
+
+# Перезапустите Apache
+service apache2 restart
+
+# Проверьте
+php -i | grep display_errors
+
+exit
+```
+
+Проверьте текущее состояние:
+
+```
+# Проверьте, активен ли файл
+docker exec moodle_app php -i | grep "Loaded Configuration File"
+
+# Должно быть: Loaded Configuration File => /usr/local/etc/php/php.ini
+
+# Проверьте display_errors
+docker exec moodle_app php -i | grep display_errors
+
+# Должно быть: display_errors => Off
+```
+
+Теперь добавьте настройки для Moodle:
+
+```
+# Войдите в контейнер
+docker exec -it moodle_app bash
+
+# Добавьте настройки для Moodle в конец файла
+cat >> /usr/local/etc/php/php.ini << 'EOF'
+
+;;;;;;;;;;;;;;;;;;;;
+; Moodle specific settings
+;;;;;;;;;;;;;;;;;;;;
+
+; Resource limits for Moodle
+max_execution_time = 600
+max_input_time = 600
+memory_limit = 256M
+post_max_size = 500M
+upload_max_filesize = 500M
+max_input_vars = 5000
+
+; Timezone
+date.timezone = Europe/Moscow
+
+; Session settings
+session.save_path = /var/www/moodle/sessions
+session.gc_maxlifetime = 86400
+session.cookie_lifetime = 86400
+
+; File uploads
+file_uploads = On
+
+; Error logging (errors go to docker logs)
+log_errors = On
+error_log = /proc/self/fd/2
+EOF
+
+# Проверьте, что настройки добавились
+tail -20 /usr/local/etc/php/php.ini
+
+# Перезапустите Apache
+service apache2 restart
+
+exit
+```
