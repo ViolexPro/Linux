@@ -1,0 +1,73 @@
+docker exec -it moodle_app bash
+
+cat > /var/www/moodle/.htaccess << 'EOF'
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ===== ЗАПРЕТ ДОСТУПА К СЛУЖЕБНЫМ ПАПКАМ =====
+    RewriteRule "^/?vendor/" - [R=404,L]
+    RewriteRule "^/?node_modules/" - [R=404,L]
+    RewriteRule "^/?behat/" - [R=404,L]
+    RewriteRule "^/?tests/" - [R=404,L]
+    RewriteRule "^/?fixtures/" - [R=404,L]
+
+    # ===== ЗАПРЕТ ДОСТУПА К СКРЫТЫМ ПАПКАМ И ФАЙЛАМ =====
+    RewriteRule "(^|/)\.(git|github)" - [R=404,L]
+    RewriteRule "(^|/)\." - [R=404,L]
+
+    # ===== ЗАПРЕТ ДОСТУПА К КОНФИГУРАЦИОННЫМ ФАЙЛАМ =====
+    RewriteRule "(composer\.json|composer\.lock|package\.json|package-lock\.json)" - [R=404,L]
+    RewriteRule "(phpunit\.xml|\.env|\.gitignore|Makefile)" - [R=404,L]
+    RewriteRule "(\.stylelintrc|\.eslintrc|\.travis\.yml)" - [R=404,L]
+
+    # ===== ЗАПРЕТ ДОСТУПА К XML ФАЙЛАМ =====
+    RewriteRule "(environment\.xml|install\.xml|db/install\.xml)" - [R=404,L]
+
+    # ===== ЗАПРЕТ ДОСТУПА К ДОКУМЕНТАЦИИ =====
+    RewriteRule "(README|UPGRADE|CONTRIBUTING|CHANGES|LICENSE|readme\.txt|readme\.md)" - [R=404,L]
+    RewriteRule "(upgrade\.txt|UPGRADING\.md|UPGRADING-CURRENT\.md)" - [R=404,L]
+
+    # ===== ДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА =====
+    RewriteRule "^doesnotexist$" - [R=404,L]
+    RewriteRule "readme_moodle\.txt$" - [R=404,L]
+    RewriteRule "readme\.txt$" - [R=404,L]
+    RewriteRule "README\.(txt|md)$" - [R=404,L]
+    RewriteRule "privacy/tests/fixtures/" - [R=404,L]
+    RewriteRule "enrol/lti/tests/fixtures/" - [R=404,L]
+    RewriteRule "blog/tests/behat/" - [R=404,L]
+    RewriteRule ".*/tests/behat/.*\.feature$" - [R=404,L]
+    RewriteRule "install\.xml$" - [R=404,L]
+    RewriteRule "environment\.xml$" - [R=404,L]
+    RewriteRule "upgrade\.txt$" - [R=404,L]
+    RewriteRule "UPGRADING\.md$" - [R=404,L]
+    RewriteRule "^lib/classes/" - [R=404,L]
+
+    # ===== ПРИНУДИТЕЛЬНЫЙ 404 ДЛЯ НЕСУЩЕСТВУЮЩИХ ФАЙЛОВ =====
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule \.(php|html|txt|xml|json|md|yml|dist)$ - [R=404,L]
+
+    # ===== ОТКЛЮЧАЕМ ИНДЕКСАЦИЮ ДИРЕКТОРИЙ =====
+    Options -Indexes
+
+    # ===== СТАНДАРТНОЕ ПРАВИЛО MOODLE (ДОЛЖНО БЫТЬ ПОСЛЕДНИМ) =====
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+ErrorDocument 403 /404.php
+ErrorDocument 404 /404.php
+EOF
+
+# Проверьте содержимое
+cat /var/www/moodle/.htaccess
+
+# Перезапустите Apache
+service apache2 restart
+
+exit
